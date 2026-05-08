@@ -11,9 +11,10 @@ services:
       MYSQL_USER: ${MYSQL_USER}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
     ports:
-      # Exposed on host for local DB inspection (dev only).
-      # In production you would remove this so MySQL is only reachable from the Docker network.
-      - "3306:3306"
+      # Host port is configurable via MYSQL_HOST_PORT (default 3307 to avoid clashing
+      # with a local MySQL on 3306). Container always listens on 3306 internally.
+      # In production, remove this mapping so MySQL is only reachable from the Docker network.
+      - "${MYSQL_HOST_PORT:-3307}:3306"
     volumes:
       - mysql_data:/var/lib/mysql
     networks:
