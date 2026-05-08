@@ -3,6 +3,7 @@ import { Prisma, Todo } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTodoDto } from './dto/create-todo.dto';
 import { ListTodosQueryDto } from './dto/list-todos.query.dto';
+import { UpdateTodoDto } from './dto/update-todo.dto';
 
 @Injectable()
 export class TodosService {
@@ -14,6 +15,17 @@ export class TodosService {
       throw new NotFoundException(`Todo with id ${id} not found`);
     }
     return todo;
+  }
+
+  async update(id: number, dto: UpdateTodoDto): Promise<Todo> {
+    await this.findOne(id);
+
+    const data: Prisma.TodoUpdateInput = {
+      ...dto,
+      dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
+    };
+
+    return this.prisma.todo.update({ where: { id }, data });
   }
 
   async create(dto: CreateTodoDto): Promise<Todo> {
