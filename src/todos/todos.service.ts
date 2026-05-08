@@ -28,6 +28,11 @@ export class TodosService {
     return this.prisma.todo.update({ where: { id }, data });
   }
 
+  async remove(id: number): Promise<void> {
+    await this.findOne(id);
+    await this.prisma.todo.delete({ where: { id } });
+  }
+
   async create(dto: CreateTodoDto): Promise<Todo> {
     return this.prisma.todo.create({
       data: {
