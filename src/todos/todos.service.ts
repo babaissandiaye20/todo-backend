@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, Todo } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTodoDto } from './dto/create-todo.dto';
@@ -7,6 +7,14 @@ import { ListTodosQueryDto } from './dto/list-todos.query.dto';
 @Injectable()
 export class TodosService {
   constructor(private readonly prisma: PrismaService) {}
+
+  async findOne(id: number): Promise<Todo> {
+    const todo = await this.prisma.todo.findUnique({ where: { id } });
+    if (!todo) {
+      throw new NotFoundException(`Todo with id ${id} not found`);
+    }
+    return todo;
+  }
 
   async create(dto: CreateTodoDto): Promise<Todo> {
     return this.prisma.todo.create({
