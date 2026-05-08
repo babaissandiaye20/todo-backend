@@ -1,0 +1,67 @@
+name: todo-docker
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: todo-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    ports:
+      # Host port is configurable via MYSQL_HOST_PORT (default 3307 to avoid clashing
+      # with a local MySQL on 3306). Container always listens on 3306 internally.
+      # In production, remove this mapping so MySQL is only reachable from the Docker network.
+      - "${MYSQL_HOST_PORT:-3307}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - app-network
+    healthcheck:
+      # Use the application user to verify the database is fully ready (not just the daemon).
+      test:
+        [
+          "CMD",
+          "mysqladmin",
+          "ping",
+          "-h",
+          "localhost",
+          "-u",
+          "${MYSQL_USER}",
+          "-p${MYSQL_PASSWORD}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: todo-backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: ${PORT:-4000}
+      # Hostname `mysql` resolves to the mysql service via Docker's internal DNS.
+      DATABASE_URL: "mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE}"
+    ports:
+      - "${PORT:-4000}:4000"
+    depends_on:
+      mysql:
+        # Wait for MySQL healthcheck to pass before starting the backend.
+        condition: service_healthy
+    networks:
+      - app-network
+
+volumes:
+  mysql_data:
+    name: todo_mysql_data
+
+networks:
+  app-network:
+    name: todo-network
+    driver: bridge
