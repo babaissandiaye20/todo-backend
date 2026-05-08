@@ -1,7 +1,10 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseIntPipe,
   Patch,
@@ -39,5 +42,11 @@ export class TodosController {
     @Body() dto: UpdateTodoDto,
   ): Promise<Todo> {
     return this.todosService.update(id, dto);
+  }
+
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  remove(@Param('id', ParseIntPipe) id: number): Promise<void> {
+    return this.todosService.remove(id);
   }
 }
