@@ -1,0 +1,42 @@
+# Dependencies (rebuilt inside container)
+node_modules
+npm-debug.log*
+
+# Build artifacts (rebuilt inside container)
+dist
+build
+coverage
+
+# Environment / secrets (never bake into image)
+.env
+.env.local
+.env.*.local
+
+# Git
+.git
+.gitignore
+.github
+
+# Editor / OS
+.idea
+.vscode
+*.swp
+.DS_Store
+
+# Docs / misc
+README.md
+*.md
+.dockerignore
+Dockerfile
+docker-compose*.yml
+
+# Logs
+logs
+*.log
+
+# Tests
+test
+*.spec.ts
+
+# Generated Prisma client (re-generated in builder stage)
+src/generated
