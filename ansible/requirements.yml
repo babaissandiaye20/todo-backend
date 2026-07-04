@@ -1,0 +1,4 @@
+# Collections Ansible necessaires.
+# Installer avec : ansible-galaxy collection install -r requirements.yml
+collections:
+  - name: community.docker   # pour le module docker_compose_v2
