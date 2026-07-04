@@ -1,0 +1,51 @@
+# docker-compose-prod.yml — SERVEUR DE TEST (valeurs en clair assumees).
+# Usage sur la VM :
+#   sudo docker compose -f docker-compose-prod.yml down -v
+#   sudo docker compose -f docker-compose-prod.yml up -d
+name: todo-docker
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: todo-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: "rootpass"
+      MYSQL_DATABASE: "todo_db"
+      MYSQL_USER: "todo"
+      MYSQL_PASSWORD: "todopass"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "todo", "-ptodopass"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  backend:
+    image: USERNAME/todo_backend:latest      # <-- remplace USERNAME par ton compte Docker Hub
+    container_name: todo-backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "4000"
+      DATABASE_URL: "mysql://todo:todopass@mysql:3306/todo_db"
+    ports:
+      - "4000:4000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - app-network
+
+volumes:
+  mysql_data:
+    name: todo_mysql_data
+
+networks:
+  app-network:
+    name: todo-network
+    driver: bridge
