@@ -1,0 +1,50 @@
+---
+# Playbook de deploiement du todo-backend.
+# Fait tout en une fois : installe Docker, genere le .env, tire l'image et lance la stack.
+# Idempotent : l'installation de Docker ne se fait reellement qu'une fois.
+- name: Deployer todo-backend
+  hosts: all
+  become: yes
+  tasks:
+
+    - name: Installer Docker + le plugin compose
+      apt:
+        name:
+          - docker.io
+          - docker-compose-v2
+        state: present
+        update_cache: yes
+
+    - name: Demarrer Docker (et au boot)
+      service:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Se connecter a Docker Hub (seulement si un token est fourni - image privee)
+      community.docker.docker_login:
+        username: "{{ lookup('env', 'REGISTRY_USER') | trim }}"
+        password: "{{ lookup('env', 'REGISTRY_TOKEN') }}"
+      when: lookup('env', 'REGISTRY_TOKEN') | length > 0
+
+    - name: Creer le dossier de l'app
+      file:
+        path: /opt/todo
+        state: directory
+
+    - name: Copier le docker-compose.yml
+      copy:
+        src: docker-compose.yml
+        dest: /opt/todo/docker-compose.yml
+
+    - name: Generer le .env sur la VM (avec les secrets)
+      template:
+        src: templates/env.j2
+        dest: /opt/todo/.env
+        mode: "0600"          # lisible SEULEMENT par le proprietaire (securite)
+
+    - name: Tirer l'image et lancer la stack
+      community.docker.docker_compose_v2:
+        project_src: /opt/todo
+        state: present
+        pull: always          # tire toujours la derniere image avant de relancer

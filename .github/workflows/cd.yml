@@ -1,0 +1,60 @@
+name: backend-cd
+
+# Se declenche APRES que le CI (backend-ci) a fini, OU manuellement via le bouton "Run workflow".
+on:
+  workflow_run:
+    workflows: ["backend-ci"]
+    types: [completed]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    # Ne deploie QUE si le CI a reussi (ou si lancement manuel).
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Calculer le tag de l'image (trim des espaces du secret)
+        id: img
+        env:
+          REG_USER: ${{ secrets.DOCKERUSERNAME }}
+        run: |
+          user="$(printf %s "$REG_USER" | tr -d '[:space:]')"
+          echo "image=${user}/todo_backend:latest" >> "$GITHUB_OUTPUT"
+
+      - name: Installer Ansible + la collection community.docker
+        run: |
+          pip install --user ansible
+          ansible-galaxy collection install community.docker
+
+      - name: Preparer la cle SSH depuis les secrets
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SERVER_IP: ${{ secrets.SERVER_IP }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan "$SERVER_IP" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Deployer via Ansible
+        working-directory: ansible
+        env:
+          # Ces variables alimentent env.j2 (le .env genere sur la VM) et le login Docker.
+          BACKEND_IMAGE: ${{ steps.img.outputs.image }}
+          PORT: "4000"
+          MYSQL_DATABASE: ${{ secrets.MYSQL_DATABASE }}
+          MYSQL_USER: ${{ secrets.MYSQL_USER }}
+          MYSQL_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
+          MYSQL_ROOT_PASSWORD: ${{ secrets.MYSQL_ROOT_PASSWORD }}
+          REGISTRY_USER: ${{ secrets.DOCKERUSERNAME }}
+          REGISTRY_TOKEN: ${{ secrets.DOCKERTOCKEN }}
+          SERVER_IP: ${{ secrets.SERVER_IP }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+        run: |
+          ansible-playbook \
+            -i "${SERVER_IP}," \
+            -u "$SERVER_USER" \
+            --private-key ~/.ssh/deploy_key \
+            playbook.yml
