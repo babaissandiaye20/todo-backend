@@ -1,0 +1,52 @@
+# docker-compose.yml de PRODUCTION (pour la VM).
+# Difference avec celui de la racine : le backend TIRE l'image depuis Docker Hub
+# (deja construite par le CI) au lieu de la construire sur place.
+name: todo-docker
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: todo-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    # Pas de mapping de port en prod : MySQL n'est accessible QUE depuis le reseau Docker.
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - app-network
+    healthcheck:
+      test:
+        ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "${MYSQL_USER}", "-p${MYSQL_PASSWORD}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  backend:
+    image: ${BACKEND_IMAGE}          # <-- image tiree depuis Docker Hub (construite par le CI)
+    container_name: todo-backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: ${PORT:-4000}
+      DATABASE_URL: "mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE}"
+    ports:
+      - "${PORT:-4000}:4000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - app-network
+
+volumes:
+  mysql_data:
+    name: todo_mysql_data
+
+networks:
+  app-network:
+    name: todo-network
+    driver: bridge

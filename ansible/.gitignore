@@ -1,0 +1,3 @@
+# Ne jamais commit de secrets ni de fichiers generes.
+.env
+*.retry
