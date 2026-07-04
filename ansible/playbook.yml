@@ -37,11 +37,8 @@
         src: docker-compose.yml
         dest: /opt/todo/docker-compose.yml
 
-    - name: Generer le .env sur la VM (avec les secrets)
-      template:
-        src: templates/env.j2
-        dest: /opt/todo/.env
-        mode: "0600"          # lisible SEULEMENT par le proprietaire (securite)
+    # NOTE : le .env est place MANUELLEMENT sur la VM dans /opt/todo/.env
+    # (avec les vrais mots de passe MySQL). Le playbook ne le genere plus.
 
     - name: Tirer l'image et lancer la stack
       community.docker.docker_compose_v2:
