@@ -1,6 +1,6 @@
 name: backend-cd
 
-# Se declenche APRES que le CI (backend-ci) a fini, OU manuellement via le bouton "Run workflow".
+# Se declenche APRES le CI (build+push), ou manuellement.
 on:
   workflow_run:
     workflows: ["backend-ci"]
@@ -9,13 +9,11 @@ on:
 
 jobs:
   deploy:
-    # Ne deploie QUE si le CI a reussi (ou si lancement manuel).
+    # Ne deploie QUE si le CI a reussi (ou lancement manuel).
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Calculer le tag de l'image (trim des espaces du secret)
+      - name: Calculer le tag de l'image
         id: img
         env:
           REG_USER: ${{ secrets.DOCKERUSERNAME }}
@@ -23,38 +21,57 @@ jobs:
           user="$(printf %s "$REG_USER" | tr -d '[:space:]')"
           echo "image=${user}/todo_backend:latest" >> "$GITHUB_OUTPUT"
 
-      - name: Installer Ansible + la collection community.docker
-        run: |
-          pip install --user ansible
-          ansible-galaxy collection install community.docker
-
-      - name: Preparer la cle SSH depuis les secrets
+      - name: Preparer la cle SSH
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          SERVER_IP: ${{ secrets.SERVER_IP }}
+          FRONT_IP: ${{ secrets.FRONT_IP }}
         run: |
           mkdir -p ~/.ssh
           printf '%s' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan "$SERVER_IP" >> ~/.ssh/known_hosts 2>/dev/null
+          ssh-keyscan "$FRONT_IP" >> ~/.ssh/known_hosts 2>/dev/null || true
 
-      - name: Deployer via Ansible
-        working-directory: ansible
+      - name: Deployer le BACK (via le Front bastion) + rollback
         env:
-          # Ces variables alimentent env.j2 (le .env genere sur la VM) et le login Docker.
-          BACKEND_IMAGE: ${{ steps.img.outputs.image }}
-          PORT: "4000"
-          MYSQL_DATABASE: ${{ secrets.MYSQL_DATABASE }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          FRONT_IP: ${{ secrets.FRONT_IP }}
+          BACK_IP: ${{ secrets.BACK_IP }}
+          DB_IP: ${{ secrets.DB_IP }}
           MYSQL_USER: ${{ secrets.MYSQL_USER }}
           MYSQL_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
-          MYSQL_ROOT_PASSWORD: ${{ secrets.MYSQL_ROOT_PASSWORD }}
-          REGISTRY_USER: ${{ secrets.DOCKERUSERNAME }}
-          REGISTRY_TOKEN: ${{ secrets.DOCKERTOCKEN }}
-          SERVER_IP: ${{ secrets.SERVER_IP }}
-          SERVER_USER: ${{ secrets.SERVER_USER }}
+          MYSQL_DATABASE: ${{ secrets.MYSQL_DATABASE }}
+          IMAGE: ${{ steps.img.outputs.image }}
         run: |
-          ansible-playbook \
-            -i "${SERVER_IP}," \
-            -u "$SERVER_USER" \
-            --private-key ~/.ssh/deploy_key \
-            playbook.yml
+          # ProxyCommand : on rebondit par le Front (bastion) pour atteindre le Back prive.
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            -o ProxyCommand="ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -W %h:%p ${SSH_USER}@${FRONT_IP}" \
+            "${SSH_USER}@${BACK_IP}" \
+            "IMAGE='${IMAGE}' DB_IP='${DB_IP}' MYSQL_USER='${MYSQL_USER}' MYSQL_PASSWORD='${MYSQL_PASSWORD}' MYSQL_DATABASE='${MYSQL_DATABASE}' bash -s" <<'DEPLOY'
+          set -e
+          NAME=todo-backend
+          # Sauvegarde de l'image actuelle (pour rollback)
+          OLD_IMAGE=$(docker inspect --format='{{.Config.Image}}' "$NAME" 2>/dev/null || echo "")
+
+          docker pull "$IMAGE"
+          docker rm -f "$NAME" 2>/dev/null || true      # gere le 1er deploiement (pas de conteneur)
+          docker run -d --name "$NAME" --restart unless-stopped \
+            -e NODE_ENV=production -e PORT=4000 \
+            -e DATABASE_URL="mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@${DB_IP}:3306/${MYSQL_DATABASE}" \
+            -p 4000:4000 "$IMAGE"
+
+          # Health check (polling : 24 x 5s = 120s max)
+          for i in $(seq 1 24); do
+            if curl -s http://localhost:4000 >/dev/null 2>&1; then echo "Backend UP"; exit 0; fi
+            sleep 5
+          done
+
+          echo "Health check KO -> ROLLBACK vers ${OLD_IMAGE:-aucune}"
+          docker rm -f "$NAME" 2>/dev/null || true
+          if [ -n "$OLD_IMAGE" ]; then
+            docker run -d --name "$NAME" --restart unless-stopped \
+              -e NODE_ENV=production -e PORT=4000 \
+              -e DATABASE_URL="mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@${DB_IP}:3306/${MYSQL_DATABASE}" \
+              -p 4000:4000 "$OLD_IMAGE"
+          fi
+          exit 1
+          DEPLOY
