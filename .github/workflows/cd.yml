@@ -33,7 +33,7 @@ jobs:
 
       - name: Deployer le BACK (via le Front bastion) + rollback
         env:
-          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_USER: ${{ secrets.SSH_USER || 'ubuntu' }}
           FRONT_IP: ${{ secrets.FRONT_IP }}
           BACK_IP: ${{ secrets.BACK_IP }}
           DB_IP: ${{ secrets.DB_IP }}
